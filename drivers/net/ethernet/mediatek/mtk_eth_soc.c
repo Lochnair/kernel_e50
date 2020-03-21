@@ -119,6 +119,13 @@ u8 vlan_aware_enabled = 0;
 EXPORT_SYMBOL(switched_ports);
 EXPORT_SYMBOL(vlan_aware_enabled);
 
+#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
+struct FoeEntry *PpeFoeBase_indrv;
+dma_addr_t PpePhyFoeBase_indrv;
+EXPORT_SYMBOL(PpeFoeBase_indrv);
+EXPORT_SYMBOL(PpePhyFoeBase_indrv);
+#endif
+
 int upd_eth_stats(int port, u32 rx_pkt, u32 rx_byte, u32 rx_err, u32 rx_drop,
 	u32 tx_pkt, u32 tx_byte, u32 tx_err, u32 tx_drop)
 {
@@ -1430,7 +1437,7 @@ static int fe_open(struct net_device *dev)
 {
 	struct fe_priv *priv = netdev_priv(dev);
 	unsigned long flags;
-	u32 val, reg;
+	u32 val;
 	int err;
 
 	err = fe_init_dma(priv);
@@ -1462,10 +1469,10 @@ static int fe_open(struct net_device *dev)
 	mtk_ppe_probe(priv);
 #endif
 
-#ifdef CONFIG_DTB_UBNT_ER
-	// Start flow control and add ON2OFF support
-	mii_mgr_read(0x1f, 0x1fe0, &reg);
-	mii_mgr_write(0x1f, 0x1fe0, reg | BIT(31) | BIT(28));
+#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
+	PpeFoeBase_indrv = dma_alloc_coherent(NULL, FOE_4TB_SIZ * sizeof(struct FoeEntry), &PpePhyFoeBase_indrv, GFP_KERNEL);
+	if (!PpeFoeBase_indrv)
+		printk(KERN_ERR "%s: Reserve DMA for hwnat failed\n", __func__);
 #endif
 
 	return 0;
@@ -1476,13 +1483,6 @@ static int fe_stop(struct net_device *dev)
 	struct fe_priv *priv = netdev_priv(dev);
 	unsigned long flags;
 	int i;
-	u32 reg;
-
-#ifdef CONFIG_DTB_UBNT_ER
-	// Disable flow control
-	mii_mgr_read(0x1f, 0x1fe0, &reg);
-	mii_mgr_write(0x1f, 0x1fe0, reg & ~(BIT(31)));
-#endif
 
 	netif_tx_disable(dev);
 	fe_int_disable(priv->soc->tx_int | priv->soc->rx_int);
@@ -1512,6 +1512,11 @@ static int fe_stop(struct net_device *dev)
 
 #ifdef CONFIG_NET_MEDIATEK_OFFLOAD
 	mtk_ppe_remove(priv);
+#endif
+
+#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
+	if (PpeFoeBase_indrv)
+		dma_free_coherent(NULL, FOE_4TB_SIZ * sizeof(struct FoeEntry), PpeFoeBase_indrv, PpePhyFoeBase_indrv);
 #endif
 
 	return 0;

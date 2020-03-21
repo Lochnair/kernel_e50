@@ -200,6 +200,19 @@ static int FoeAllocTbl(uint32_t NumOfEntry)
 
 	unsigned long t_start = jiffies;
 
+#ifdef CONFIG_DTB_UBNT_ER
+	// Use DMA allocated by ethernet driver
+	PpeFoeBase = PpeFoeBase_indrv;
+	PpePhyFoeBase = PpePhyFoeBase_indrv;
+
+	if (PpeFoeBase) {
+		//printk(KERN_ERR "%s: Load DMA alloc in driver success!\n", __func__);
+		goto DMA_ASSIGNED;
+	} else {
+		//printk(KERN_ERR "%s: Load DMA alloc in driver failed, try to realloc!\n", __func__);
+	}
+#endif
+
 	FoeTblSize = NumOfEntry * sizeof(struct FoeEntry);
 	PpeFoeBase = dma_alloc_coherent(NULL, FoeTblSize, &PpePhyFoeBase, GFP_KERNEL);
 
@@ -219,6 +232,7 @@ static int FoeAllocTbl(uint32_t NumOfEntry)
 		return 0;
 	}
 
+DMA_ASSIGNED:
 	RegWrite(PPE_FOE_BASE, PpePhyFoeBase);
 	memset(PpeFoeBase, 0, FoeTblSize);
 
@@ -3187,10 +3201,18 @@ static void FoeFreeTbl(uint32_t NumOfEntry)
 {
     uint32_t FoeTblSize;
 
+#ifdef CONFIG_DTB_UBNT_ER
+	if (PpeFoeBase == PpeFoeBase_indrv) {
+		//printk(KERN_ERR "%s: No need to remove DMA allocated in driver!\n", __func__);
+		goto RESET_FOE_BASE;
+	}
+#endif
+
 	printk(KERN_ERR "%s: Need to remove DMA reallocated in module!\n", __func__);
     FoeTblSize = NumOfEntry * sizeof(struct FoeEntry);
     dma_free_coherent(NULL, FoeTblSize, PpeFoeBase, PpePhyFoeBase);
 
+RESET_FOE_BASE:
     RegWrite(PPE_FOE_BASE, 0);
 }
 
