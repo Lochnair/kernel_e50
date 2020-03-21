@@ -473,7 +473,7 @@ enum FoeCpuReason {
 
 /* PPE_GLO_CFG, Offset=0x200 */
 #if defined (CONFIG_RALINK_MT7621)
-#define DFL_TTL0_DRP		(1)	/* 1:Drop, 0: Alert CPU */
+#define DFL_TTL0_DRP		(0)	/* 1:Drop, 0: Alert CPU */
 #else
 #define DFL_TTL0_DRP		(0)	/* 1:Drop, 0: Alert CPU */
 #endif
