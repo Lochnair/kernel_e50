@@ -1124,6 +1124,23 @@ static const struct device_attribute sfe_attrs[] = {
 	       sfe_cm_set_tcp_flow_accel_delay_pkts),
 };
 
+static int __net_init sfe_cm_nf_register(struct net *net)
+{
+	return nf_register_net_hooks(net, sfe_cm_ops_post_routing,
+				ARRAY_SIZE(sfe_cm_ops_post_routing));
+}
+
+static void __net_exit sfe_cm_nf_unregister(struct net *net)
+{
+	nf_unregister_net_hooks(net, sfe_cm_ops_post_routing,
+				ARRAY_SIZE(sfe_cm_ops_post_routing));
+}
+
+static struct pernet_operations sfe_cm_net_ops = {
+	.init = sfe_cm_nf_register,
+	.exit = sfe_cm_nf_unregister,
+};
+
 /*
  * sfe_cm_init()
  */
@@ -1167,7 +1184,7 @@ static int __init sfe_cm_init(void)
 	/*
 	 * Register our netfilter hooks.
 	 */
-	result = nf_register_hooks(sfe_cm_ops_post_routing, ARRAY_SIZE(sfe_cm_ops_post_routing));
+	result = register_pernet_subsys(&sfe_cm_net_ops);
 	if (result < 0) {
 		DEBUG_ERROR("can't register nf post routing hook: %d\n", result);
 		goto exit3;
@@ -1195,7 +1212,7 @@ static int __init sfe_cm_init(void)
 
 #ifdef CONFIG_NF_CONNTRACK_EVENTS
 exit4:
-	nf_unregister_hooks(sfe_cm_ops_post_routing, ARRAY_SIZE(sfe_cm_ops_post_routing));
+	unregister_pernet_subsys(&sfe_cm_net_ops);
 #endif
 exit3:
 	unregister_inet6addr_notifier(&sc->inet6_notifier);
@@ -1246,7 +1263,7 @@ static void __exit sfe_cm_exit(void)
 	nf_conntrack_unregister_notifier(&init_net, &sfe_cm_conntrack_notifier);
 
 #endif
-	nf_unregister_hooks(sfe_cm_ops_post_routing, ARRAY_SIZE(sfe_cm_ops_post_routing));
+	unregister_pernet_subsys(&sfe_cm_net_ops);
 
 	unregister_inet6addr_notifier(&sc->inet6_notifier);
 	unregister_inetaddr_notifier(&sc->inet_notifier);
