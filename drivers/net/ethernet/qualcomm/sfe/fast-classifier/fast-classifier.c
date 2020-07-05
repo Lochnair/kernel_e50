@@ -1379,7 +1379,6 @@ static void fast_classifier_sync_rule(struct sfe_connection_sync *sis)
 	}
 
 	ct = nf_ct_tuplehash_to_ctrack(h);
-	NF_CT_ASSERT(ct->timeout.data == (unsigned long)ct);
 
 	/*
 	 * Only update if this is not a fixed timeout
