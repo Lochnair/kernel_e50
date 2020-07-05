@@ -771,15 +771,6 @@ static unsigned int fast_classifier_post_routing(struct sk_buff *skb, bool is_v4
 	}
 
 	/*
-	 * Don't process untracked connections.
-	 */
-	if (unlikely(nf_ct_is_untracked(ct))) {
-		fast_classifier_incr_exceptions(FAST_CL_EXCEPTION_CT_NO_TRACK);
-		DEBUG_TRACE("untracked connection\n");
-		return NF_ACCEPT;
-	}
-
-	/*
 	 * Unconfirmed connection may be dropped by Linux at the final step,
 	 * So we don't process unconfirmed connections.
 	 */
@@ -1181,14 +1172,6 @@ static int fast_classifier_conntrack_event(struct notifier_block *this,
 	 */
 	if (unlikely(!ct)) {
 		DEBUG_WARN("no ct in conntrack event callback\n");
-		return NOTIFY_DONE;
-	}
-
-	/*
-	 * If this is an untracked connection then we can't have any state either.
-	 */
-	if (unlikely(nf_ct_is_untracked(ct))) {
-		DEBUG_TRACE("ignoring untracked conn\n");
 		return NOTIFY_DONE;
 	}
 
