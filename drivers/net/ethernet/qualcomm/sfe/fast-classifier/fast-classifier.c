@@ -125,6 +125,9 @@ static struct genl_multicast_group fast_classifier_genl_mcgrp[] = {
 	},
 };
 
+static int fast_classifier_offload_genl_msg(struct sk_buff *skb, struct genl_info *info);
+static int fast_classifier_nl_genl_msg_DUMP(struct sk_buff *skb, struct netlink_callback *cb);
+
 static struct genl_ops fast_classifier_gnl_ops[] = {
 	{
 		.cmd = FAST_CLASSIFIER_C_OFFLOAD,
@@ -160,9 +163,6 @@ static struct genl_family fast_classifier_gnl_family = {
 	.mcgrps = fast_classifier_genl_mcgrp,
 	.n_mcgrps = ARRAY_SIZE(fast_classifier_genl_mcgrp),
 };
-
-static int fast_classifier_offload_genl_msg(struct sk_buff *skb, struct genl_info *info);
-static int fast_classifier_nl_genl_msg_DUMP(struct sk_buff *skb, struct netlink_callback *cb);
 
 static atomic_t offload_msgs = ATOMIC_INIT(0);
 static atomic_t offload_no_match_msgs = ATOMIC_INIT(0);
