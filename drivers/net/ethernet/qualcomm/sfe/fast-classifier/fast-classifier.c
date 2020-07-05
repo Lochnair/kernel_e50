@@ -1597,6 +1597,23 @@ static const struct device_attribute fast_classifier_attrs[] = {
 	__ATTR(exceptions, S_IRUGO, fast_classifier_get_exceptions, NULL),
 };
 
+static int __net_init fast_classifier_nf_register(struct net *net)
+{
+	return nf_register_net_hooks(net, fast_classifier_ops_post_routing,
+				ARRAY_SIZE(fast_classifier_ops_post_routing));
+}
+
+static void __net_exit fast_classifier_nf_unregister(struct net *net)
+{
+	nf_unregister_net_hooks(net, fast_classifier_ops_post_routing,
+				ARRAY_SIZE(fast_classifier_ops_post_routing));
+}
+
+static struct pernet_operations fast_classifier_net_ops = {
+	.init = fast_classifier_nf_register,
+	.exit = fast_classifier_nf_unregister,
+};
+
 /*
  * fast_classifier_init()
  */
@@ -1644,7 +1661,7 @@ static int __init fast_classifier_init(void)
 	/*
 	 * Register our netfilter hooks.
 	 */
-	result = nf_register_hooks(fast_classifier_ops_post_routing, ARRAY_SIZE(fast_classifier_ops_post_routing));
+	result = register_pernet_subsys(&fast_classifier_net_ops);
 	if (result < 0) {
 		DEBUG_ERROR("can't register nf post routing hook: %d\n", result);
 		goto exit3;
@@ -1718,7 +1735,7 @@ exit5:
 
 exit4:
 #endif
-	nf_unregister_hooks(fast_classifier_ops_post_routing, ARRAY_SIZE(fast_classifier_ops_post_routing));
+	unregister_pernet_subsys(&fast_classifier_net_ops)
 
 exit3:
 	unregister_inetaddr_notifier(&sc->inet_notifier);
@@ -1784,7 +1801,7 @@ static void __exit fast_classifier_exit(void)
 	nf_conntrack_unregister_notifier(&init_net, &fast_classifier_conntrack_notifier);
 
 #endif
-	nf_unregister_hooks(fast_classifier_ops_post_routing, ARRAY_SIZE(fast_classifier_ops_post_routing));
+	unregister_pernet_subsys(&fast_classifier_net_ops)
 
 	unregister_inet6addr_notifier(&sc->inet6_notifier);
 	unregister_inetaddr_notifier(&sc->inet_notifier);
