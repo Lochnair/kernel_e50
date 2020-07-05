@@ -1776,7 +1776,7 @@ static void __exit fast_classifier_exit(void)
 	nf_conntrack_unregister_notifier(&init_net, &fast_classifier_conntrack_notifier);
 
 #endif
-	unregister_pernet_subsys(&fast_classifier_net_ops)
+	unregister_pernet_subsys(&fast_classifier_net_ops);
 
 	unregister_inet6addr_notifier(&sc->inet6_notifier);
 	unregister_inetaddr_notifier(&sc->inet_notifier);
