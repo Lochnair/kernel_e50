@@ -1717,7 +1717,7 @@ exit5:
 
 exit4:
 #endif
-	unregister_pernet_subsys(&fast_classifier_net_ops)
+	unregister_pernet_subsys(&fast_classifier_net_ops);
 
 exit3:
 	unregister_inetaddr_notifier(&sc->inet_notifier);
