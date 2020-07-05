@@ -126,7 +126,6 @@ static struct genl_multicast_group fast_classifier_genl_mcgrp[] = {
 };
 
 static struct genl_family fast_classifier_gnl_family = {
-	.id = GENL_ID_GENERATE,
 	.hdrsize = FAST_CLASSIFIER_GENL_HDRSIZE,
 	.name = FAST_CLASSIFIER_GENL_NAME,
 	.version = FAST_CLASSIFIER_GENL_VERSION,
