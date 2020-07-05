@@ -125,16 +125,6 @@ static struct genl_multicast_group fast_classifier_genl_mcgrp[] = {
 	},
 };
 
-static struct genl_family fast_classifier_gnl_family = {
-	.hdrsize = FAST_CLASSIFIER_GENL_HDRSIZE,
-	.name = FAST_CLASSIFIER_GENL_NAME,
-	.version = FAST_CLASSIFIER_GENL_VERSION,
-	.maxattr = FAST_CLASSIFIER_A_MAX,
-};
-
-static int fast_classifier_offload_genl_msg(struct sk_buff *skb, struct genl_info *info);
-static int fast_classifier_nl_genl_msg_DUMP(struct sk_buff *skb, struct netlink_callback *cb);
-
 static struct genl_ops fast_classifier_gnl_ops[] = {
 	{
 		.cmd = FAST_CLASSIFIER_C_OFFLOAD,
@@ -158,6 +148,21 @@ static struct genl_ops fast_classifier_gnl_ops[] = {
 		.dumpit = fast_classifier_nl_genl_msg_DUMP,
 	},
 };
+
+static struct genl_family fast_classifier_gnl_family = {
+	.hdrsize = FAST_CLASSIFIER_GENL_HDRSIZE,
+	.name = FAST_CLASSIFIER_GENL_NAME,
+	.version = FAST_CLASSIFIER_GENL_VERSION,
+	.maxattr = FAST_CLASSIFIER_A_MAX,
+	.module = THIS_MODULE,
+	.ops = fast_classifier_gnl_ops,
+	.n_ops = ARRAY_SIZE(fast_classifier_gnl_ops),
+	.mcgrps = fast_classifier_genl_mcgrp,
+	.n_mcgrps = ARRAY_SIZE(fast_classifier_genl_mcgrp),
+};
+
+static int fast_classifier_offload_genl_msg(struct sk_buff *skb, struct genl_info *info);
+static int fast_classifier_nl_genl_msg_DUMP(struct sk_buff *skb, struct netlink_callback *cb);
 
 static atomic_t offload_msgs = ATOMIC_INIT(0);
 static atomic_t offload_no_match_msgs = ATOMIC_INIT(0);
@@ -1678,34 +1683,11 @@ static int __init fast_classifier_init(void)
 	}
 #endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
-	result = genl_register_family_with_ops_groups(&fast_classifier_gnl_family,
-						      fast_classifier_gnl_ops,
-						      fast_classifier_genl_mcgrp);
+	result = genl_register_family(&fast_classifier_gnl_family);
 	if (result) {
 		DEBUG_ERROR("failed to register genl ops: %d\n", result);
 		goto exit5;
 	}
-#else
-	result = genl_register_family(&fast_classifier_gnl_family);
-	if (result) {
-		printk(KERN_CRIT "unable to register genl family\n");
-		goto exit5;
-	}
-
-	result = genl_register_ops(&fast_classifier_gnl_family, fast_classifier_gnl_ops);
-	if (result) {
-		printk(KERN_CRIT "unable to register ops\n");
-		goto exit6;
-	}
-
-	result = genl_register_mc_group(&fast_classifier_gnl_family,
-					fast_classifier_genl_mcgrp);
-	if (result) {
-		printk(KERN_CRIT "unable to register multicast group\n");
-		goto exit6;
-	}
-#endif
 
 	printk(KERN_ALERT "fast-classifier: registered\n");
 
@@ -1784,13 +1766,6 @@ static void __exit fast_classifier_exit(void)
 	 */
 	sfe_ipv4_destroy_all_rules_for_dev(NULL);
 	sfe_ipv6_destroy_all_rules_for_dev(NULL);
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
-	result = genl_unregister_ops(&fast_classifier_gnl_family, fast_classifier_gnl_ops);
-	if (result != 0) {
-		printk(KERN_CRIT "Unable to unreigster genl_ops\n");
-	}
-#endif
 
 	result = genl_unregister_family(&fast_classifier_gnl_family);
 	if (result != 0) {
