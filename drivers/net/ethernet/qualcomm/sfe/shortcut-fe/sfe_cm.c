@@ -361,15 +361,6 @@ static unsigned int sfe_cm_post_routing(struct sk_buff *skb, int is_v4)
 	}
 
 	/*
-	 * Don't process untracked connections.
-	 */
-	if (unlikely(nf_ct_is_untracked(ct))) {
-		sfe_cm_incr_exceptions(SFE_CM_EXCEPTION_CT_NO_TRACK);
-		DEBUG_TRACE("untracked connection\n");
-		return NF_ACCEPT;
-	}
-
-	/*
 	 * Unconfirmed connection may be dropped by Linux at the final step,
 	 * So we don't process unconfirmed connections.
 	 */
@@ -723,14 +714,6 @@ static int sfe_cm_conntrack_event(struct notifier_block *this,
 	}
 
 	/*
-	 * If this is an untracked connection then we can't have any state either.
-	 */
-	if (unlikely(nf_ct_is_untracked(ct))) {
-		DEBUG_TRACE("ignoring untracked conn\n");
-		return NOTIFY_DONE;
-	}
-
-	/*
 	 * We're only interested in destroy events.
 	 */
 	if (unlikely(!(events & (1 << IPCT_DESTROY)))) {
@@ -850,7 +833,6 @@ static void sfe_cm_sync_rule(struct sfe_connection_sync *sis)
 	}
 
 	ct = nf_ct_tuplehash_to_ctrack(h);
-	NF_CT_ASSERT(ct->timeout.data == (unsigned long)ct);
 
 	/*
 	 * Only update if this is not a fixed timeout
