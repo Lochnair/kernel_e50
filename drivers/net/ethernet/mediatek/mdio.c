@@ -110,7 +110,7 @@ static void phy_init(struct fe_priv *priv, struct phy_device *phy)
 	phy->autoneg = AUTONEG_ENABLE;
 	phy->speed = 0;
 	phy->duplex = 0;
-	phy->supported &= PHY_BASIC_FEATURES;
+	phy->supported &= PHY_BASIC_FEATURES | PHY_1000BT_FEATURES;
 	phy->advertising = phy->supported | ADVERTISED_Autoneg;
 
 	phy_start_aneg(phy);

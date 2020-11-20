@@ -17,6 +17,7 @@
 
 #include <linux/ethtool.h>
 
+void ethtool_init(struct net_device *dev);
 void fe_set_ethtool_ops(struct net_device *netdev);
 
 #endif /* FE_ETHTOOL_H */

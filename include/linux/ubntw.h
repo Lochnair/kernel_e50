@@ -12,6 +12,13 @@ struct board_type_info {
 #define DR_LEN 32
 #define BD_LEN sizeof(struct ubnt_bd_t) /* UBNT BD */
 
+#define UBNT_BOARD_HAS_NAND_512MB(__type__) \
+	((!strcmp(__type__, "e55") || !strcmp(__type__, "e56") \
+		|| !strcmp(__type__, "e600")) ? true : false)
+
+#define UBNT_BOARD_HAS_RTL8367(__type__) \
+	((!strcmp(__type__, "e55") || !strcmp(__type__, "e56")) ? true : false)
+
 struct ubnt_bd_t {
 	u16 crc16;
 	u8 mac[6];

@@ -228,6 +228,8 @@ struct mt7530_mapping {
 		.vids = { 0, 1, 2 },
 	},
 };
+struct mt7530_priv *switch_priv;
+EXPORT_SYMBOL(switch_priv);
 
 struct mt7530_mapping*
 mt7530_find_mapping(struct device_node *np)
@@ -303,7 +305,7 @@ mt7530_set_vlan_enable(struct switch_dev *dev,
 	return 0;
 }
 
-static u32
+u32
 mt7530_r32(struct mt7530_priv *priv, u32 reg)
 {
 	u32 val;
@@ -322,8 +324,9 @@ mt7530_r32(struct mt7530_priv *priv, u32 reg)
 
 	return val;
 }
+EXPORT_SYMBOL(mt7530_r32);
 
-static void
+void
 mt7530_w32(struct mt7530_priv *priv, u32 reg, u32 val)
 {
 	if (priv->bus) {
@@ -336,6 +339,7 @@ mt7530_w32(struct mt7530_priv *priv, u32 reg, u32 val)
 	pr_debug("MT7530 MDIO Write[%04x]=%08x\n", reg, val);
 	iowrite32(val, priv->base + reg);
 }
+EXPORT_SYMBOL(mt7530_w32);
 
 static void
 mt7530_vtcr(struct mt7530_priv *priv, u32 cmd, u32 val)
@@ -932,6 +936,8 @@ mt7530_probe(struct device *dev, void __iomem *base, struct mii_bus *bus, int vl
 	mt7530 = devm_kzalloc(dev, sizeof(struct mt7530_priv), GFP_KERNEL);
 	if (!mt7530)
 		return -ENOMEM;
+
+	switch_priv = mt7530;
 
 	mt7530->base = base;
 	mt7530->bus = bus;

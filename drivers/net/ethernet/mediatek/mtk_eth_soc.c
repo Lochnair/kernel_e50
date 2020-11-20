@@ -77,6 +77,7 @@
 #define SYSC_REG_RSTCTRL	0x34
 
 #if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
+DEFINE_MUTEX(hwnat_mutex);
 struct PDMA_TXD_INFO4_T {
 	unsigned int VLAN_TAG:17;	/* INSV(1)+VPRI(3)+CFI(1)+VID(12) */
 	unsigned int RESV:2;
@@ -118,13 +119,6 @@ u32 switched_ports = 0;
 u8 vlan_aware_enabled = 0;
 EXPORT_SYMBOL(switched_ports);
 EXPORT_SYMBOL(vlan_aware_enabled);
-
-#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
-struct FoeEntry *PpeFoeBase_indrv;
-dma_addr_t PpePhyFoeBase_indrv;
-EXPORT_SYMBOL(PpeFoeBase_indrv);
-EXPORT_SYMBOL(PpePhyFoeBase_indrv);
-#endif
 
 int upd_eth_stats(int port, u32 rx_pkt, u32 rx_byte, u32 rx_err, u32 rx_drop,
 	u32 tx_pkt, u32 tx_byte, u32 tx_err, u32 tx_drop)
@@ -731,7 +725,7 @@ static int fe_tx_map_dma(struct sk_buff *skb, struct net_device *dev,
 	unsigned int nr_frags;
 	u32 def_txd4;
 	int i, j, k, frag_size, frag_map_size, offset;
-#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)	
+#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
 	struct PDMA_TXD_INFO4_T *txd4_tmp;
 #endif
 
@@ -956,6 +950,7 @@ static int fe_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	struct net_device_stats *stats = &dev->stats;
 	int tx_num;
 	int len = skb->len;
+	unsigned long flags;
 
 	if (fe_skb_padto(skb, priv)) {
 		netif_warn(priv, tx_err, dev, "tx padding failed!\n");
@@ -970,8 +965,8 @@ static int fe_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		return NETDEV_TX_BUSY;
 	}
 
-	if (vlan_aware_enabled == 1 && 
-		skb_vlan_tag_get_id(skb) == 0xffe && 
+	if (vlan_aware_enabled == 1 &&
+		skb_vlan_tag_get_id(skb) == 0xffe &&
 		skb_vlan_tagged_multi(skb) == true) {
            // Remove VID 0xffe when vlan_aware is enabled and skb has VID 0xffe.
            skb_vlan_pop(skb);
@@ -981,11 +976,14 @@ static int fe_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	if(ra_sw_nat_hook_tx!= NULL)
 	{
 #if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
-		if(FOE_MAGIC_TAG(skb) != FOE_MAGIC_PPE) 
+		if(FOE_MAGIC_TAG(skb) != FOE_MAGIC_PPE)
 #endif
 		{
+			mutex_lock(&hwnat_mutex);
 			if ( ra_sw_nat_hook_tx(skb, 1) == 1 ) {
+				mutex_unlock(&hwnat_mutex);
 			} else {
+				mutex_unlock(&hwnat_mutex);
 				kfree_skb(skb);
 				return 0;
 			}
@@ -1079,7 +1077,7 @@ static int fe_poll_rx(struct napi_struct *napi, int budget,
 			vlan_id = vlan_tci & VLAN_VID_MASK;
 #endif
 
-#ifdef CONFIG_NET_REALTEK_RTL8367_PLUGIN		
+#ifdef CONFIG_NET_REALTEK_RTL8367_PLUGIN
 		if(vlan_aware_enabled == 1) {
 			if (vlan_id > 0 && vlan_id < PORT_VID_BASE(ubnt_bd_g.type)) {
 				// Insert VID 0xffe when
@@ -1090,10 +1088,10 @@ static int fe_poll_rx(struct napi_struct *napi, int budget,
 					goto release_desc;
 			}
 		}
-#endif		
+#endif
 
 		skb->protocol = eth_type_trans(skb, netdev);
-		
+
 #if defined (CONFIG_RA_HW_NAT)  || defined (CONFIG_RA_HW_NAT_MODULE)
 		if(ra_sw_nat_hook_rx != NULL) {
 		    FOE_MAGIC_TAG(skb)= FOE_MAGIC_GE;
@@ -1105,14 +1103,14 @@ static int fe_poll_rx(struct napi_struct *napi, int budget,
 				FOE_SP(skb) = vlan_id - PORT_VID_BASE(ubnt_bd_g.type);
 		}
 #endif
-		
+
 /* ra_sw_nat_hook_rx return 1 --> continue
  * ra_sw_nat_hook_rx return 0 --> FWD & without netif_rx
  */
 #if !defined(CONFIG_RA_NAT_NONE) && (defined (CONFIG_RA_HW_NAT)  || defined (CONFIG_RA_HW_NAT_MODULE))
-		if((ra_sw_nat_hook_rx == NULL) || 
+		if((ra_sw_nat_hook_rx == NULL) ||
 			(ra_sw_nat_hook_rx!= NULL && ra_sw_nat_hook_rx(skb)))
-#else		
+#else
 #ifdef CONFIG_NET_MEDIATEK_OFFLOAD
 		if (mtk_offload_check_rx(priv, skb, trxd.rxd4) == 0)
 #endif
@@ -1122,8 +1120,8 @@ static int fe_poll_rx(struct napi_struct *napi, int budget,
 			stats->rx_bytes += pktlen;
 
 			napi_gro_receive(napi, skb);
-		} 
-#ifdef CONFIG_NET_MEDIATEK_OFFLOAD		
+		}
+#ifdef CONFIG_NET_MEDIATEK_OFFLOAD
 		else {
 			dev_kfree_skb(skb);
 		}
@@ -1395,6 +1393,84 @@ void fe_csum_config(struct fe_priv *priv)
 	fe_rxcsum_config((dev->features & NETIF_F_RXCSUM));
 }
 
+#ifdef CONFIG_DTB_UBNT_ER
+extern struct mutex mdio_nest_lock;
+extern struct ethtool_ops rtk_vif_ethtool_ops;
+extern struct ethtool_ops fe_vif_ethtool_ops;
+extern void ethtool_sfp_init(void);
+extern void ethtool_sfp_remove(void);
+
+/* Netdev notifier callback to inform the change of state of a netdevice */
+static int mtk_mt7621_sw_netdev_notifier_callback(struct notifier_block *this,
+						unsigned long event, void *ptr)
+{
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	struct vlan_dev_priv *vlan;
+	u32 adv, bmcr;
+	int i;
+	struct fe_priv *priv;
+
+	if (!netif_carrier_ok(dev))
+		return NOTIFY_DONE;
+
+	// Only support the vlan interface port
+	if ( !is_vlan_dev(dev) )
+		return NOTIFY_DONE;
+
+	vlan = vlan_dev_priv(dev);
+	priv = netdev_priv(vlan->real_dev);
+
+	// Confirm the vlan id of ethX is correct
+	i = vlan->vlan_id - PORT_VID_BASE(ubnt_bd_g.type);
+
+	switch (event) {
+		case NETDEV_UP:
+			if ( !is_vlan_dev(dev) )
+				return NOTIFY_DONE;
+
+			// For ER-X ports eth0 - eth4
+			if (i >= 0 && i < 5) {
+				dev->ethtool_ops = &fe_vif_ethtool_ops;
+			}
+
+			// For ER-X SFP port eth5
+			if (i == 5 && !strcmp(ubnt_bd_g.type, "e51")) {
+				i = SFP_PHY_ADDR;
+				mutex_lock(&mdio_nest_lock);
+				adv = mdiobus_read(priv->mii_bus, i, MII_CTRL1000);
+				adv |= (ADVERTISE_1000HALF | ADVERTISE_1000FULL);
+				mdiobus_write(priv->mii_bus, i, MII_CTRL1000, adv);
+				mutex_unlock(&mdio_nest_lock);
+				dev->ethtool_ops = &fe_vif_ethtool_ops;
+				// Add timer for checking SFP status
+				ethtool_sfp_init();
+			}
+
+			// For ER-10X, eth5 - eth9 (reset eth5 on rtl8367c)
+			if (i >=5 && i < 10 && UBNT_BOARD_HAS_RTL8367(ubnt_bd_g.type)) {
+				// Change orginal ethtool ops for rtl8367c support
+				dev->ethtool_ops = &rtk_vif_ethtool_ops;
+			}
+
+			break;
+		case NETDEV_GOING_DOWN:
+			// Del timer for checking SFP status
+			if (i == 5 && !strcmp(ubnt_bd_g.type, "e51"))
+				ethtool_sfp_remove();
+			break;
+		default:
+			break;
+	}
+	return NOTIFY_DONE;
+}
+
+/* Init Netdev notifier event callback to notify any change in netdevice
+ * attached with an external PHY */
+static struct notifier_block mtk_mt7621_netdev_notifier __read_mostly = {
+	.notifier_call		= mtk_mt7621_sw_netdev_notifier_callback,
+};
+#endif
+
 static int fe_hw_init(struct net_device *dev)
 {
 	struct fe_priv *priv = netdev_priv(dev);
@@ -1437,7 +1513,7 @@ static int fe_open(struct net_device *dev)
 {
 	struct fe_priv *priv = netdev_priv(dev);
 	unsigned long flags;
-	u32 val;
+	u32 val, reg;
 	int err;
 
 	err = fe_init_dma(priv);
@@ -1469,10 +1545,10 @@ static int fe_open(struct net_device *dev)
 	mtk_ppe_probe(priv);
 #endif
 
-#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
-	PpeFoeBase_indrv = dma_alloc_coherent(NULL, FOE_4TB_SIZ * sizeof(struct FoeEntry), &PpePhyFoeBase_indrv, GFP_KERNEL);
-	if (!PpeFoeBase_indrv)
-		printk(KERN_ERR "%s: Reserve DMA for hwnat failed\n", __func__);
+#ifdef CONFIG_DTB_UBNT_ER
+	// Start flow control and add ON2OFF support
+	mii_mgr_read(0x1f, 0x1fe0, &reg);
+	mii_mgr_write(0x1f, 0x1fe0, reg | BIT(31) | BIT(28));
 #endif
 
 	return 0;
@@ -1483,6 +1559,13 @@ static int fe_stop(struct net_device *dev)
 	struct fe_priv *priv = netdev_priv(dev);
 	unsigned long flags;
 	int i;
+	u32 reg;
+
+#ifdef CONFIG_DTB_UBNT_ER
+	// Disable flow control
+	mii_mgr_read(0x1f, 0x1fe0, &reg);
+	mii_mgr_write(0x1f, 0x1fe0, reg & ~(BIT(31)));
+#endif
 
 	netif_tx_disable(dev);
 	fe_int_disable(priv->soc->tx_int | priv->soc->rx_int);
@@ -1512,11 +1595,6 @@ static int fe_stop(struct net_device *dev)
 
 #ifdef CONFIG_NET_MEDIATEK_OFFLOAD
 	mtk_ppe_remove(priv);
-#endif
-
-#if defined (CONFIG_RA_HW_NAT) || defined (CONFIG_RA_HW_NAT_MODULE)
-	if (PpeFoeBase_indrv)
-		dma_free_coherent(NULL, FOE_4TB_SIZ * sizeof(struct FoeEntry), PpeFoeBase_indrv, PpePhyFoeBase_indrv);
 #endif
 
 	return 0;
@@ -1561,6 +1639,10 @@ static int __init fe_init(struct net_device *dev)
 				priv->soc->port_init(priv, port);
 
 	if (priv->phy) {
+#ifdef CONFIG_DTB_UBNT_ER
+		/* net_device structure Init */
+		ethtool_init(dev);
+#endif
 		err = priv->phy->connect(priv);
 		if (err)
 			goto err_phy_disconnect;
@@ -1601,17 +1683,17 @@ static int fe_do_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 	struct fe_priv *priv = netdev_priv(dev);
 	unsigned long result;
 	unsigned int i;
-#ifdef CONFIG_NET_REALTEK_RTL8367_PLUGIN	
+#ifdef CONFIG_NET_REALTEK_RTL8367_PLUGIN
 	struct ra_mii_ioctl_data mii;
 	int ret = 0;
 	struct ra_switch_ioctl_data ioctl_data;
-#endif	
+#endif
 
 	//if (!priv->phy_dev)
 	//	return -ENODEV;
 
 	switch (cmd) {
-#ifdef CONFIG_NET_REALTEK_RTL8367_PLUGIN		
+#ifdef CONFIG_NET_REALTEK_RTL8367_PLUGIN
 	case RAETH_MII_READ:
 		result = copy_from_user(&mii, ifr->ifr_data, sizeof(mii));
 		//mii_mgr_read(mii.phy_id, mii.reg_num, &mii.val_out);
@@ -1646,7 +1728,7 @@ static int fe_do_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 		copy_to_user(ifr->ifr_data, &ioctl_data, sizeof(ioctl_data));
 		return 0;
 		break;
-#endif		
+#endif
 	case SIOCETHTOOL:
 		if (!priv->phy_dev)
 			return -ENODEV;
@@ -1760,7 +1842,7 @@ static int foe_table_show_all(struct mtk_eth *eth)
 			*((u32*) h_dest) = swab32(entry->ipv4_hnapt.dmac_hi);
 			*((u16*) &h_dest[4]) = swab16(entry->ipv4_hnapt.dmac_lo);
 			if(strcmp(es(entry), "INVALID") != 0) {
-				printk(KERN_ERR 
+				printk(KERN_ERR
 					   "(%x)0x%05x|state=%s|type=%s|\n%pI4:%d->%pI4:%d=>%pI4:%d->%pI4:%d|%pM=>%pM|\netype=0x%04x|info1=0x%x|info2=0x%x|\nvlan1=%d|vlan2=%d\n\n",
 					   i,
 					   ei(entry, end), es(entry), pt(entry),
@@ -1801,7 +1883,7 @@ int foe_table_show_entry(struct mtk_eth *eth, u32 hash)
 	*((u16*) &h_source[4]) = swab16(entry->ipv4_hnapt.smac_lo);
 	*((u32*) h_dest) = swab32(entry->ipv4_hnapt.dmac_hi);
 	*((u16*) &h_dest[4]) = swab16(entry->ipv4_hnapt.dmac_lo);
-	printk(KERN_ERR 
+	printk(KERN_ERR
 		   "(%d)|state=%s|type=%s|\n%pI4:%d->%pI4:%d=>%pI4:%d->%pI4:%d|%pM=>%pM|\netype=0x%04x|info1=0x%x|info2=0x%x|\nvlan1=%d|vlan2=%d\n\n",
 		   hash, es(entry), pt(entry),
 		   &saddr, entry->ipv4_hnapt.sport,
@@ -1910,6 +1992,7 @@ static int fe_probe(struct platform_device *pdev)
 	struct clk *sysclk;
 	int err, napi_weight;
 	struct device_node *node;
+	int ret = -1;
 
 	device_reset(&pdev->dev);
 
@@ -1923,7 +2006,7 @@ static int fe_probe(struct platform_device *pdev)
 
 	node = of_parse_phandle(pdev->dev.of_node, "mediatek,ethsys", 0);
 	fe_sysctl_base = of_iomap(node, 0);
-	
+
 	fe_base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(fe_base)) {
 		err = -EADDRNOTAVAIL;
@@ -1939,7 +2022,7 @@ static int fe_probe(struct platform_device *pdev)
 
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	dev_raether = netdev;
-	
+
 	netdev->netdev_ops = &fe_netdev_ops;
 	netdev->base_addr = (unsigned long)fe_base;
 
@@ -1964,7 +2047,7 @@ static int fe_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_DTB_UBNT_ER
 		strcpy(netdev->name, "itf0");
-#endif	
+#endif
 
 	priv = netdev_priv(netdev);
 	spin_lock_init(&priv->page_lock);
@@ -2024,6 +2107,13 @@ static int fe_probe(struct platform_device *pdev)
 	netif_info(priv, probe, netdev, "mediatek frame engine at 0x%08lx, irq %d\n",
 		   netdev->base_addr, netdev->irq);
 
+#ifdef CONFIG_DTB_UBNT_ER
+	ret = register_netdevice_notifier(&mtk_mt7621_netdev_notifier);
+	if (ret != 0) {
+		printk(KERN_ERR "mtk_mt7621_sw: Failed to register netdevice notifier %d\n", ret);
+	}
+#endif
+
 	return 0;
 
 err_free_dev:
@@ -2038,6 +2128,7 @@ static int fe_remove(struct platform_device *pdev)
 {
 	struct net_device *dev = platform_get_drvdata(pdev);
 	struct fe_priv *priv = netdev_priv(dev);
+	int ret = -1;
 
 	netif_napi_del(&priv->rx_napi);
 	kfree(priv->hw_stats);
@@ -2047,6 +2138,13 @@ static int fe_remove(struct platform_device *pdev)
 	unregister_netdev(dev);
 	free_netdev(dev);
 	platform_set_drvdata(pdev, NULL);
+
+#ifdef CONFIG_DTB_UBNT_ER
+	ret = unregister_netdevice_notifier(&mtk_mt7621_netdev_notifier);
+	if (ret != 0) {
+		printk(KERN_ERR "mtk_mt7621_sw: Failed to unregister netdevice notifier %d\n", ret);
+	}
+#endif
 
 	return 0;
 }

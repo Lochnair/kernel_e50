@@ -352,6 +352,13 @@ struct fe_rx_dma {
 #define FE_PHY_FLAG_PORT	BIT(0)
 #define FE_PHY_FLAG_ATTACH	BIT(1)
 
+#ifdef CONFIG_DTB_UBNT_ER
+#define P5_PHY_ID			5
+/* For ER-X SFP */
+#define SFP_PHY_ADDR		7
+#define SFP_INTF			"eth5"
+#endif
+
 struct fe_tx_dma {
 	unsigned int txd1;
 	unsigned int txd2;
@@ -502,6 +509,8 @@ struct fe_priv {
 	struct mtk_foe_entry		*foe_table;
 	dma_addr_t			foe_table_phys;
 	struct flow_offload __rcu	**foe_flow_table;
+
+	struct mii_if_info	mii_info;
 };
 
 extern const struct of_device_id of_fe_match[];
